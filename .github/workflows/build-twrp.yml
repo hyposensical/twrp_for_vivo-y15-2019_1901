@@ -1,0 +1,79 @@
+name: Build TWRP (vivo 1901)
+
+# Builds recovery.img from https://github.com/vivo-devs/twrp_vivo_1901 (branch 11)
+# using the TWRP minimal manifest (twrp-11). Run it from the Actions tab.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 300
+    env:
+      TWRP_DIR: /home/runner/twrp
+      MANIFEST_BRANCH: twrp-11
+      DEVICE_REPO: https://github.com/vivo-devs/twrp_vivo_1901
+      DEVICE_BRANCH: "11"
+      LUNCH_TARGET: twrp_1901-eng
+
+    steps:
+      - name: Free up disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: true
+          swap-storage: false
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git-core gnupg flex bison build-essential zip curl \
+            zlib1g-dev libc6-dev-i386 libncurses5 x11proto-core-dev libx11-dev \
+            lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig \
+            python-is-python3 bc cpio ccache rsync
+          sudo apt-get install -y lib32ncurses-dev || sudo apt-get install -y lib32ncurses5-dev || true
+          mkdir -p ~/bin
+          curl -s https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+          chmod a+x ~/bin/repo
+          git config --global user.name "twrp-builder"
+          git config --global user.email "twrp-builder@users.noreply.github.com"
+          git config --global color.ui false
+
+      - name: Sync TWRP minimal manifest
+        run: |
+          export PATH="$HOME/bin:$PATH"
+          mkdir -p "$TWRP_DIR"
+          cd "$TWRP_DIR"
+          repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b "$MANIFEST_BRANCH"
+          repo sync -c -j"$(nproc --all)" --force-sync --no-clone-bundle --no-tags
+
+      - name: Add the device tree
+        run: |
+          cd "$TWRP_DIR"
+          git clone --depth=1 -b "$DEVICE_BRANCH" "$DEVICE_REPO" device/vivo/1901
+          ls -la device/vivo/1901 device/vivo/1901/prebuilt
+
+      - name: Build recovery image
+        run: |
+          cd "$TWRP_DIR"
+          export ALLOW_MISSING_DEPENDENCIES=true
+          set +e
+          source build/envsetup.sh
+          lunch "$LUNCH_TARGET"
+          mka -j"$(nproc --all)" recoveryimage
+          set -e
+          ls -la out/target/product/1901/ || true
+          test -f out/target/product/1901/recovery.img
+
+      - name: Upload recovery.img
+        uses: actions/upload-artifact@v4
+        with:
+          name: twrp-vivo-1901-recovery
+          path: |
+            /home/runner/twrp/out/target/product/1901/recovery.img
+          if-no-files-found: error
