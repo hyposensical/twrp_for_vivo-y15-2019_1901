@@ -57,6 +57,12 @@ jobs:
           cd "$TWRP_DIR"
           git clone --depth=1 -b "$DEVICE_BRANCH" "$DEVICE_REPO" device/vivo/1901
           ls -la device/vivo/1901 device/vivo/1901/prebuilt
+          # The tree already passes --dtb itself through BOARD_MKBOOTIMG_ARGS, but
+          # BOARD_INCLUDE_DTB_IN_BOOTIMG makes Android 11's build expect a generated
+          # out/target/product/1901/dtb.img that has no rule. Drop that flag.
+          sed -i '/BOARD_INCLUDE_DTB_IN_BOOTIMG/d' device/vivo/1901/BoardConfig.mk
+          grep -n "DTB" device/vivo/1901/BoardConfig.mk || true
+          test -f device/vivo/1901/prebuilt/dtb.img || echo "WARNING: prebuilt/dtb.img not found in the device tree"
 
       - name: Build recovery image
         run: |
